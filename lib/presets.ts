@@ -5,13 +5,18 @@ export const CHARSETS = {
   dense: " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
   minimal: " .:*#",
   blocks: " ░▒▓█",
+  bars: " ▁▂▃▄▅▆▇█",
   dots: " ·•●",
   braille: " ⠁⠃⠇⠏⠟⠿⡿⣿",
   binary: " 01",
+  katakana: " ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789",
+  flowers: " .·*✿❀✾",
+  hearts: " .·♡♥",
+  math: " .:∴∵≡≈∞Σ∏∫∂∇",
 } as const;
 
 export const DEFAULTS: Settings = {
-  cols: 180,
+  cols: 120,
   aspect: 0.6,
   charset: CHARSETS.classic,
   gamma: 1,
@@ -23,6 +28,10 @@ export const DEFAULTS: Settings = {
   contourT: 0.12,
   shade: true,
   blankBelow: 0.06,
+  glyphScale: 1,
+  glow: 0,
+  scan: 0,
+  vignette: false,
 };
 
 /** Where the result is going. Exact output pixels; the crop follows the aspect, the column count follows the size. */
@@ -48,7 +57,11 @@ export function colsFor(w: number, h: number, cellAspect: number, rows: number) 
   return Math.min(320, Math.max(40, Math.round(w / (cellH * cellAspect) / 4) * 4));
 }
 
-export type Preset = { name: string; hint: string; settings: Partial<Settings> };
+export type Preset = {
+  name: string; hint: string; settings: Partial<Settings>;
+  /** The charset isn't in ink order (e.g. katakana): sort it by measured ink when applied. */
+  sortByInk?: boolean;
+};
 
 /** A preset is a bag of settings on top of DEFAULTS. Keep this list short: it is the whole style UI. */
 export const PRESETS: Preset[] = [
@@ -56,10 +69,17 @@ export const PRESETS: Preset[] = [
   { name: "Dense", hint: "70 characters, photo detail", settings: { charset: CHARSETS.dense, aspect: 0.55, colorMode: "image", gamma: 0.9 } },
   { name: "Minimal", hint: "five characters", settings: { charset: CHARSETS.minimal, aspect: 0.6, colorMode: "image" } },
   { name: "Blocks", hint: "pixel-art shading", settings: { charset: CHARSETS.blocks, aspect: 1, colorMode: "image" } },
+  { name: "Bars", hint: "bar-chart shading", settings: { charset: CHARSETS.bars, aspect: 0.6, colorMode: "image" } },
   { name: "Dots", hint: "halftone", settings: { charset: CHARSETS.dots, aspect: 1, colorMode: "image", gamma: 0.8 } },
   { name: "Braille", hint: "fine dots", settings: { charset: CHARSETS.braille, aspect: 0.6, colorMode: "mono", fg: "#e8e8ff", bg: "#06060a", gamma: 1.2 } },
-  { name: "Terminal", hint: "green on black", settings: { charset: CHARSETS.classic, aspect: 0.6, colorMode: "mono", fg: "#39ff14", bg: "#02110a", gamma: 1.1 } },
-  { name: "Amber", hint: "old CRT", settings: { charset: CHARSETS.dense, aspect: 0.6, colorMode: "mono", fg: "#ffb000", bg: "#160c00" } },
+  { name: "Terminal", hint: "green phosphor, glow and scanlines", settings: { charset: CHARSETS.classic, aspect: 0.6, colorMode: "mono", fg: "#39ff14", bg: "#02110a", gamma: 1.1, glow: 0.5, scan: 0.25 } },
+  { name: "Amber", hint: "old CRT", settings: { charset: CHARSETS.dense, aspect: 0.6, colorMode: "mono", fg: "#ffb000", bg: "#160c00", glow: 0.35, scan: 0.3, vignette: true } },
+  { name: "Matrix", hint: "katakana rain, frozen", settings: { charset: CHARSETS.katakana, aspect: 0.7, colorMode: "mono", fg: "#00ff6a", bg: "#000000", glow: 0.4 }, sortByInk: true },
   { name: "Paper", hint: "ink on cream", settings: { charset: CHARSETS.classic, aspect: 0.6, colorMode: "mono", fg: "#2b2419", bg: "#f4ecd8", invert: true, shade: false, blankBelow: 0.03 } },
+  { name: "Negative", hint: "light where it's dark", settings: { charset: CHARSETS.classic, aspect: 0.6, colorMode: "mono", fg: "#ffffff", bg: "#000000", invert: true, shade: false } },
   { name: "Contour", hint: "line art on edges", settings: { charset: CHARSETS.dots, aspect: 0.6, colorMode: "mono", fg: "#ffffff", bg: "#000000", contour: true, contourT: 0.1, shade: false } },
+  { name: "Binary", hint: "ones and zeros", settings: { charset: CHARSETS.binary, aspect: 0.6, colorMode: "mono", fg: "#4fd1ff", bg: "#000810", glow: 0.3 } },
+  { name: "Flowers", hint: "✿ ❀ ✾", settings: { charset: CHARSETS.flowers, aspect: 1, colorMode: "image", gamma: 0.9 }, sortByInk: true },
+  { name: "Hearts", hint: "♡ ♥", settings: { charset: CHARSETS.hearts, aspect: 1, colorMode: "image", gamma: 0.9 }, sortByInk: true },
+  { name: "Math", hint: "∑ ∫ ∞", settings: { charset: CHARSETS.math, aspect: 0.8, colorMode: "image" }, sortByInk: true },
 ];

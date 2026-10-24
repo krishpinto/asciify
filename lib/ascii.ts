@@ -30,6 +30,12 @@ export interface Settings {
   shade: boolean;
   /** Cells darker than this are left blank. */
   blankBelow: number;
+  /** Glyph size relative to the cell (1 = fills it; <1 leaves gaps, >1 overlaps). */
+  glyphScale: number;
+  /** Post effects, applied after the glyphs are drawn. */
+  glow: number;        // 0..1 additive blur
+  scan: number;        // 0..1 scanline darkness
+  vignette: boolean;
 }
 
 export interface Grid {
@@ -166,7 +172,7 @@ export function compose(grid: Grid, s: Settings, o: Overrides): Composed {
 const shadeCache = new Map<string, string>();
 /** Mix fg toward bg by (1-k). Cached: there are only a few hundred distinct k values after rounding. */
 function shadeHex(fg: string, bg: string, k: number) {
-  const kk = Math.round(k * 64) / 64, key = fg + bg + kk;
+  const kk = Math.min(1, Math.max(0, Math.round(k * 64) / 64)), key = fg + bg + kk;
   let v = shadeCache.get(key);
   if (!v) {
     const f = parseInt(fg.slice(1), 16), b = parseInt(bg.slice(1), 16);
@@ -182,18 +188,15 @@ function shadeHex(fg: string, bg: string, k: number) {
  * Either whole-pixel cells (preview: cellW/cellH are rounded, the canvas is cols×cellW by rows×cellH)
  * or an exact output size (export: width/height are the canvas, cells are fractional to fill it).
  */
-export interface RenderOpts { cellW?: number; cellH?: number; width?: number; height?: number; bg: string; font: string; }
+export interface RenderOpts {
+  cellW?: number; cellH?: number; width?: number; height?: number; bg: string; font: string;
+  glyphScale?: number; glow?: number; scan?: number; vignette?: boolean;
+}
 /** Glyphs are drawn semi-bold: thin monospace strokes vanish once cells get small. */
 export const GLYPH_WEIGHT = 600;
 
-export function render(c: Composed, canvas: HTMLCanvasElement, r: RenderOpts) {
-  let W: number, H: number, cellW: number, cellH: number;
-  if (r.width && r.height) { W = Math.round(r.width); H = Math.round(r.height); cellW = W / c.cols; cellH = H / c.rows; }
-  else { cellW = Math.max(1, Math.round(r.cellW!)); cellH = Math.max(1, Math.round(r.cellH!)); W = c.cols * cellW; H = c.rows * cellH; }
-  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
-  const x = canvas.getContext("2d")!;
-  x.fillStyle = r.bg; x.fillRect(0, 0, W, H);
-  x.font = `${GLYPH_WEIGHT} ${Math.max(4, Math.round(cellH * 1.02))}px ${r.font}`;
+function drawGlyphs(x: CanvasRenderingContext2D, c: Composed, cellW: number, cellH: number, font: string, glyphScale: number) {
+  x.font = `${GLYPH_WEIGHT} ${Math.max(4, Math.round(cellH * 1.02 * glyphScale))}px ${font}`;
   x.textAlign = "center"; x.textBaseline = "middle";
   let last = "";
   for (let i = 0; i < c.chars.length; i++) {
@@ -203,8 +206,44 @@ export function render(c: Composed, canvas: HTMLCanvasElement, r: RenderOpts) {
     if (col !== last) { x.fillStyle = col; last = col; }
     const px = (i % c.cols) * cellW, py = ((i / c.cols) | 0) * cellH;
     const ba = BLOCK_ALPHA[ch];
-    if (ba !== undefined) { x.globalAlpha = ba; x.fillRect(px, py, cellW + 0.5, cellH + 0.5); x.globalAlpha = 1; }
-    else x.fillText(ch, px + cellW / 2, py + cellH / 2 + cellH * 0.04);
+    if (ba !== undefined) {
+      const inset = (1 - Math.min(1, glyphScale)) / 2;
+      x.globalAlpha = ba; x.fillRect(px + cellW * inset, py + cellH * inset, cellW * (1 - inset * 2) + 0.5, cellH * (1 - inset * 2) + 0.5); x.globalAlpha = 1;
+    } else x.fillText(ch, px + cellW / 2, py + cellH / 2 + cellH * 0.04);
+  }
+}
+
+export function render(c: Composed, canvas: HTMLCanvasElement, r: RenderOpts) {
+  let W: number, H: number, cellW: number, cellH: number;
+  if (r.width && r.height) { W = Math.round(r.width); H = Math.round(r.height); cellW = W / c.cols; cellH = H / c.rows; }
+  else { cellW = Math.max(1, Math.round(r.cellW!)); cellH = Math.max(1, Math.round(r.cellH!)); W = c.cols * cellW; H = c.rows * cellH; }
+  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+  const x = canvas.getContext("2d")!;
+  const glyphScale = r.glyphScale ?? 1, glow = r.glow ?? 0, scan = r.scan ?? 0;
+  x.fillStyle = r.bg; x.fillRect(0, 0, W, H);
+
+  if (glow > 0) {
+    // glyphs on a transparent layer, drawn once blurred and added (the glow), then once sharp on top
+    const layer = document.createElement("canvas"); layer.width = W; layer.height = H;
+    drawGlyphs(layer.getContext("2d")!, c, cellW, cellH, r.font, glyphScale);
+    x.save();
+    x.globalCompositeOperation = "lighter"; x.globalAlpha = Math.min(1, glow);
+    x.filter = `blur(${Math.max(2, cellH * 0.7).toFixed(1)}px)`;
+    x.drawImage(layer, 0, 0);
+    x.restore();
+    x.drawImage(layer, 0, 0);
+  } else drawGlyphs(x, c, cellW, cellH, r.font, glyphScale);
+
+  if (scan > 0) {
+    // dark lines, two per character row, like a CRT raster
+    const pitch = Math.max(2, Math.round(cellH / 2)), thick = Math.max(1, Math.round(pitch / 2));
+    x.fillStyle = `rgba(0,0,0,${scan})`;
+    for (let y = 0; y < H; y += pitch) x.fillRect(0, y, W, thick);
+  }
+  if (r.vignette) {
+    const g = x.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.3, W / 2, H / 2, Math.hypot(W, H) / 2);
+    g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,0.7)");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
   }
 }
 
@@ -233,7 +272,7 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 /** SVG at an exact size (width/height) or at cellH per row with the settings' cell shape. */
 export function toSVG(c: Composed, s: Settings, size?: { width: number; height: number }, cellHIn = 16) {
   const cellW = size ? size.width / c.cols : cellHIn * s.aspect, cellH = size ? size.height / c.rows : cellHIn;
-  const W = size ? size.width : c.cols * cellW, H = size ? size.height : c.rows * cellH, fs = cellH * 0.92;
+  const W = size ? size.width : c.cols * cellW, H = size ? size.height : c.rows * cellH, fs = cellH * 0.92 * (s.glyphScale || 1);
   const parts: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Geist Mono, ui-monospace, Menlo, Consolas, monospace" font-size="${fs}" font-weight="${GLYPH_WEIGHT}" text-anchor="middle">`,
     `<rect width="100%" height="100%" fill="${s.bg}"/>`,

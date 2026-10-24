@@ -190,10 +190,10 @@ export function Editor({ img, name, onReset }: { img: HTMLImageElement; name: st
     const fit = stageSize.twoCol ? Math.min(byW, byH) : byW;
     const cellW = Math.max(2, Math.ceil(fit));
     const cellH = Math.max(2, Math.round(cellW / s.aspect));
-    render(composed, cv, { cellW, cellH, bg: s.bg, font: fontRef.current });
+    render(composed, cv, { cellW, cellH, bg: s.bg, font: fontRef.current, glyphScale: s.glyphScale, glow: s.glow, scan: s.scan, vignette: s.vignette });
     const k = Math.min(1, fit / cellW) / dpr;
     cv.style.width = `${cv.width * k}px`; cv.style.height = `${cv.height * k}px`;
-  }, [composed, s.aspect, s.bg, fontReady, stageSize]);
+  }, [composed, s.aspect, s.bg, s.glyphScale, s.glow, s.scan, s.vignette, fontReady, stageSize]);
 
   const snapshot = () => { undo.current.push(cloneOverrides(ov)); if (undo.current.length > UNDO_MAX) undo.current.shift(); };
   const doUndo = useCallback(() => { const o = undo.current.pop(); if (o && o.erase.length === n) setOv(o); }, [n]);
@@ -209,6 +209,7 @@ export function Editor({ img, name, onReset }: { img: HTMLImageElement; name: st
     setPreset(nm);
     setS((prev) => {
       const next = { ...DEFAULTS, ...p.settings, cols: prev.cols };
+      if (p.sortByInk) next.charset = rampFromText(next.charset, fontRef.current);
       if (alphabet.trim()) next.charset = rampFromText(alphabet, fontRef.current);
       if (out && next.aspect !== prev.aspect) next.cols = colsFor(out.w, out.h, next.aspect, DETAIL[detail]);   // cell shape changed → keep rows
       return next;
@@ -216,9 +217,11 @@ export function Editor({ img, name, onReset }: { img: HTMLImageElement; name: st
   }
   function changeAlphabet(t: string) {
     setAlphabet(t);
-    const base = PRESETS.find((p) => p.name === preset)!.settings.charset ?? DEFAULTS.charset;
-    set({ charset: t.trim() ? rampFromText(t, fontRef.current) : base });
+    const p = PRESETS.find((p) => p.name === preset)!;
+    const base = p.settings.charset ?? DEFAULTS.charset;
+    set({ charset: t.trim() ? rampFromText(t, fontRef.current) : p.sortByInk ? rampFromText(base, fontRef.current) : base });
   }
+  const post = { glyphScale: s.glyphScale, glow: s.glow, scan: s.scan, vignette: s.vignette };
   function setAspect(a: number) {
     setS((p) => ({ ...p, aspect: a, cols: out ? colsFor(out.w, out.h, a, DETAIL[detail]) : p.cols }));
   }
@@ -276,8 +279,8 @@ export function Editor({ img, name, onReset }: { img: HTMLImageElement; name: st
   const exportSize = out ?? { w: grid.cols * Math.round(16 * +scale * s.aspect), h: grid.rows * 16 * +scale };
   async function savePNG() {
     const c = document.createElement("canvas");
-    if (out) render(composed, c, { width: out.w, height: out.h, bg: s.bg, font: fontRef.current });
-    else { const cellH = 16 * +scale; render(composed, c, { cellW: Math.round(cellH * s.aspect), cellH, bg: s.bg, font: fontRef.current }); }
+    if (out) render(composed, c, { width: out.w, height: out.h, bg: s.bg, font: fontRef.current, ...post });
+    else { const cellH = 16 * +scale; render(composed, c, { cellW: Math.round(cellH * s.aspect), cellH, bg: s.bg, font: fontRef.current, ...post }); }
     c.toBlob((b) => b && download(b, `${name}-${target === "free" ? "ascii" : target}.png`), "image/png");
   }
   const saveSVG = () => download(new Blob([toSVG(composed, s, out ? { width: out.w, height: out.h } : undefined)], { type: "image/svg+xml" }), `${name}-ascii.svg`);
@@ -403,12 +406,20 @@ export function Editor({ img, name, onReset }: { img: HTMLImageElement; name: st
                 <Field label="Columns" value={`${s.cols} wide`}>
                   <Slider min={40} max={320} step={4} value={s.cols} onChange={(e) => { colsAuto.current = false; set({ cols: +e.target.value }); }} />
                 </Field>
-                <Field label="Cell shape">
-                  <Segmented value={s.aspect === 1 ? "square" : "narrow"} onChange={(v) => setAspect(v === "square" ? 1 : 0.6)} options={[{ value: "narrow", label: "text cells" }, { value: "square", label: "square cells" }]} />
+                <Field label="Cell shape" value={s.aspect === 1 ? "square" : `${s.aspect.toFixed(2)} wide`}>
+                  <Slider min={0.4} max={1.2} step={0.05} value={s.aspect} onChange={(e) => setAspect(+e.target.value)} />
+                </Field>
+                <Field label="Glyph size" value={`${Math.round(s.glyphScale * 100)}%`}>
+                  <Slider min={0.5} max={1.6} step={0.05} value={s.glyphScale} onChange={(e) => set({ glyphScale: +e.target.value })} />
                 </Field>
                 <Field label="Hide dark cells" value={s.blankBelow.toFixed(2)}><Slider min={0} max={0.5} step={0.01} value={s.blankBelow} onChange={(e) => set({ blankBelow: +e.target.value })} /></Field>
                 <Toggle on={s.shade} onChange={(v) => set({ shade: v })} label="Shade ink by brightness" />
                 <Toggle on={s.contour} onChange={(v) => set({ contour: v })} label="Contour lines on edges" />
+                <div className="label pt-1">Screen effects</div>
+                <Field label="Glow" value={s.glow ? `${Math.round(s.glow * 100)}%` : "off"}><Slider min={0} max={1} step={0.05} value={s.glow} onChange={(e) => set({ glow: +e.target.value })} /></Field>
+                <Field label="Scanlines" value={s.scan ? `${Math.round(s.scan * 100)}%` : "off"}><Slider min={0} max={0.8} step={0.05} value={s.scan} onChange={(e) => set({ scan: +e.target.value })} /></Field>
+                <Toggle on={s.vignette} onChange={(v) => set({ vignette: v })} label="Vignette" />
+                <p className="text-[11px] text-muted-foreground">Screen effects apply to PNG exports. SVG and text stay clean.</p>
               </div>
             )}
           </div>

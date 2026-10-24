@@ -13,7 +13,7 @@ npm run dev
 2. **Make it for** a phone wallpaper, desktop wallpaper, square or portrait post, story, X header, or a custom size. That locks the crop to the right shape (adjust it with Crop), picks a column count that gives readable characters at that size (Detail: bold / normal / fine), and exports exactly those pixels. Free keeps the image's own shape.
 3. Pick a style, or type any text and it becomes the character ramp (sorted by how much ink each character has).
 4. Fix what you don't like: brushes (erase, restore, lighter, darker, paint an alphabet, paint a colour, stamp a character) or edit the result as plain text.
-5. Export PNG, SVG, or text. Or copy the text. Columns, cell shape and the tonal knobs live under Advanced.
+5. Export PNG, SVG, or text. Or copy the text. Columns, cell shape, glyph size, the tonal knobs and the screen effects (glow, scanlines, vignette) live under Advanced. Screen effects apply to PNG; SVG and text stay clean.
 
 ## How it works
 
