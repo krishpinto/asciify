@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-ok: var(--ok);
+  --color-bad: var(--bad);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, Menlo, Consolas, monospace;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+/* Warm near-black, amber accent. Always dark. */
+:root, .dark {
+  --background: oklch(0.145 0.002 285);
+  --foreground: oklch(0.965 0.003 285);
+  --card: oklch(0.178 0.003 285);
+  --card-foreground: oklch(0.965 0.003 285);
+  --primary: oklch(0.97 0.003 285);
+  --primary-foreground: oklch(0.16 0.003 285);
+  --muted: oklch(0.21 0.004 285);
+  --muted-foreground: oklch(0.72 0.01 285);
+  --accent: oklch(0.235 0.005 285);
+  --accent-foreground: oklch(0.97 0.003 285);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 10%);
+  --ring: oklch(0.78 0.14 75 / 60%);
+  --brand: oklch(0.8 0.15 75);
+  --brand-foreground: oklch(0.16 0.01 75);
+  --ok: oklch(0.76 0.16 155);
+  --bad: oklch(0.68 0.2 25);
+  --radius: 0.75rem;
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html { @apply font-sans; color-scheme: dark; }
+  body {
+    @apply bg-background text-foreground;
+    background-image: radial-gradient(1100px 380px at 50% -140px, oklch(0.8 0.15 75 / 14%), transparent 70%);
+    background-attachment: fixed;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: oklch(1 0 0 / 10%); border-radius: 99px; border: 3px solid transparent; background-clip: content-box; }
+  ::selection { background: oklch(0.8 0.15 75 / 35%); }
+}
+
+/* Range inputs: hairline track, round amber thumb. */
+input[type="range"] {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 20px; background: transparent; cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track { height: 2px; background: oklch(1 0 0 / 14%); border-radius: 99px; }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 14px; height: 14px; margin-top: -6px; border-radius: 99px;
+  background: var(--foreground); border: 2px solid var(--background); box-shadow: 0 0 0 1px oklch(1 0 0 / 20%);
+  transition: transform .12s ease;
+}
+input[type="range"]:hover::-webkit-slider-thumb, input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.15); background: var(--brand); }
+input[type="range"]::-moz-range-track { height: 2px; background: oklch(1 0 0 / 14%); border-radius: 99px; }
+input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 99px; background: var(--foreground); border: 2px solid var(--background); }
+
+input[type="color"] { -webkit-appearance: none; appearance: none; width: 28px; height: 28px; padding: 0; border: 1px solid var(--input); border-radius: 8px; background: none; cursor: pointer; }
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 5px; }
+
+.label { @apply font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground; }
+
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise .5s cubic-bezier(.2,.7,.2,1) both; }
+@media (prefers-reduced-motion: reduce) { .rise { animation: none; } }
