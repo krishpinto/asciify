@@ -37,21 +37,30 @@ function ExportMenu({ scale, setScale, pngSize, onPNG, onSVG, onTXT, up, size = 
   scale: Scale; setScale: (s: Scale) => void; pngSize: string;
   onPNG: () => void; onSVG: () => void; onTXT: () => void; up?: boolean; size?: "sm" | "md" | "lg"; className?: string;
 }) {
-  const [open, setOpen] = useState(false);
+  // The menu is fixed to the viewport (anchored to the button's rect) so a scrolling panel can't clip it.
+  const [pos, setPos] = useState<{ right: number; top?: number; bottom?: number } | null>(null);
+  const open = pos !== null;
   const root = useRef<HTMLDivElement>(null);
+  const toggle = () => {
+    if (open) return setPos(null);
+    const r = root.current!.getBoundingClientRect();
+    setPos(up ? { right: innerWidth - r.right, bottom: innerHeight - r.top + 8 } : { right: innerWidth - r.right, top: r.bottom + 8 });
+  };
   useEffect(() => {
     if (!open) return;
-    const close = (e: PointerEvent) => { if (!root.current?.contains(e.target as Node)) setOpen(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    const close = (e: Event) => { if (!root.current?.contains(e.target as Node)) setPos(null); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setPos(null); };
+    const away = () => setPos(null);
     window.addEventListener("pointerdown", close); window.addEventListener("keydown", esc);
-    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc); };
+    window.addEventListener("scroll", away, true); window.addEventListener("resize", away);
+    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", esc); window.removeEventListener("scroll", away, true); window.removeEventListener("resize", away); };
   }, [open]);
-  const pick = (fn: () => void) => { fn(); setOpen(false); };
+  const pick = (fn: () => void) => { fn(); setPos(null); };
   return (
     <div ref={root} className={cn("relative", className)}>
-      <Button variant="brand" size={size} onClick={() => setOpen((o) => !o)} aria-expanded={open} className="w-full"><Download />Export<ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} /></Button>
+      <Button variant="brand" size={size} onClick={toggle} aria-expanded={open} className="w-full"><Download />Export<ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} /></Button>
       {open && (
-        <div className={cn("absolute right-0 z-50 w-72 rounded-xl border border-border bg-card p-1.5 shadow-[0_20px_50px_-20px_rgba(0,0,0,.8)]", up ? "bottom-full mb-2" : "top-full mt-2")}>
+        <div style={pos} className="fixed z-50 w-72 rounded-xl border border-border bg-card p-1.5 shadow-[0_20px_50px_-20px_rgba(0,0,0,.8)]">
           <Row icon={FileImage} title="PNG" hint={pngSize} onClick={() => pick(onPNG)}>
             <div className="flex rounded-md border border-border p-0.5" onClick={(e) => e.stopPropagation()}>
               {(["1", "2", "4"] as Scale[]).map((v) => (
@@ -61,6 +70,7 @@ function ExportMenu({ scale, setScale, pngSize, onPNG, onSVG, onTXT, up, size = 
           </Row>
           <Row icon={FileCode2} title="SVG" hint="vector · scales to any size" onClick={() => pick(onSVG)} />
           <Row icon={FileText} title="Text file" hint="plain .txt, paste it anywhere" onClick={() => pick(onTXT)} />
+          <p className="px-2.5 pb-1.5 pt-2 text-[11px] leading-snug text-muted-foreground/80">Posting it small, like an avatar? Sites shrink the image and thin characters turn to mush. Set the width to about 60 first, then export at 1×.</p>
         </div>
       )}
     </div>
