@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Check, Square, X } from "lucide-react";
+import { Check, Lock, Square, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Button, Segmented } from "./ui";
 
@@ -17,17 +17,26 @@ export function cropToCanvas(img: HTMLImageElement, r: Rect) {
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-function fullRect(img: HTMLImageElement): Rect { return { x: 0, y: 0, w: img.naturalWidth, h: img.naturalHeight }; }
-function squareOf(r: Rect, img: HTMLImageElement): Rect {
-  const s = Math.min(r.w, r.h), cx = r.x + r.w / 2, cy = r.y + r.h / 2;
-  return { x: clamp(cx - s / 2, 0, img.naturalWidth - s), y: clamp(cy - s / 2, 0, img.naturalHeight - s), w: s, h: s };
+export function fullRect(img: HTMLImageElement): Rect { return { x: 0, y: 0, w: img.naturalWidth, h: img.naturalHeight }; }
+/** Largest rect of aspect `ratio` (w/h) that fits inside `r`, centred on it. */
+export function fitRatio(r: Rect, ratio: number, img: HTMLImageElement): Rect {
+  let w = r.w, h = w / ratio;
+  if (h > r.h) { h = r.h; w = h * ratio; }
+  const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  return { x: clamp(cx - w / 2, 0, img.naturalWidth - w), y: clamp(cy - h / 2, 0, img.naturalHeight - h), w, h };
 }
 
-export function CropOverlay({ img, value, onApply, onCancel }: { img: HTMLImageElement; value: Rect | null; onApply: (r: Rect | null) => void; onCancel: () => void }) {
+export function CropOverlay({ img, value, lock, onApply, onCancel }: {
+  img: HTMLImageElement; value: Rect | null;
+  /** When set, the crop is locked to this aspect (w/h), e.g. a wallpaper target. */
+  lock?: { ratio: number; label: string } | null;
+  onApply: (r: Rect | null) => void; onCancel: () => void;
+}) {
   const box = useRef<HTMLDivElement>(null);
   const [disp, setDisp] = useState({ w: 0, h: 0, ox: 0, oy: 0 });     // where the image sits inside the box
-  const [rect, setRect] = useState<Rect>(() => value ?? fullRect(img));
-  const [square, setSquare] = useState(() => !!value && Math.abs(value.w - value.h) < 1);
+  const [rect, setRect] = useState<Rect>(() => value ?? (lock ? fitRatio(fullRect(img), lock.ratio, img) : fullRect(img)));
+  const [square, setSquare] = useState(() => !lock && !!value && Math.abs(value.w - value.h) < 1);
+  const ratio = lock ? lock.ratio : square ? 1 : null;                 // null = free
   const drag = useRef<{ grab: Grab; sx: number; sy: number; start: Rect } | null>(null);
   const W = img.naturalWidth, H = img.naturalHeight;
   const scale = disp.w / W || 1;
@@ -41,6 +50,7 @@ export function CropOverlay({ img, value, onApply, onCancel }: { img: HTMLImageE
     });
     ro.observe(el); return () => ro.disconnect();
   }, [W, H]);
+
   const toImg = (e: React.PointerEvent) => {
     const b = box.current!.getBoundingClientRect();
     return { x: (e.clientX - b.left - disp.ox) / scale, y: (e.clientY - b.top - disp.oy) / scale };
@@ -58,15 +68,17 @@ export function CropOverlay({ img, value, onApply, onCancel }: { img: HTMLImageE
     let r: Rect;
     if (d.grab === "move") r = { ...s, x: clamp(s.x + dx, 0, W - s.w), y: clamp(s.y + dy, 0, H - s.h) };
     else {
-      // which edges move: anchor is the opposite corner
       const left = d.grab === "nw" || d.grab === "sw", top = d.grab === "nw" || d.grab === "ne";
-      const ax = d.grab === "new" ? s.x : left ? s.x + s.w : s.x, ay = d.grab === "new" ? s.y : top ? s.y + s.h : s.y;   // anchor
+      const ax = d.grab === "new" ? s.x : left ? s.x + s.w : s.x, ay = d.grab === "new" ? s.y : top ? s.y + s.h : s.y;   // anchor corner
       let px = clamp(d.grab === "new" ? p.x : (left ? s.x : s.x + s.w) + dx, 0, W), py = clamp(d.grab === "new" ? p.y : (top ? s.y : s.y + s.h) + dy, 0, H);
-      if (square) {
-        const side = Math.max(Math.abs(px - ax), Math.abs(py - ay));
+      if (ratio) {
+        // keep the aspect: the larger of the two deltas wins, then shrink to stay inside the image
         const sdx = Math.sign(px - ax) || 1, sdy = Math.sign(py - ay) || 1;
-        const lim = Math.min(side, sdx > 0 ? W - ax : ax, sdy > 0 ? H - ay : ay);
-        px = ax + sdx * lim; py = ay + sdy * lim;
+        let w = Math.abs(px - ax), h = Math.abs(py - ay);
+        if (w / ratio > h) h = w / ratio; else w = h * ratio;
+        const maxW = sdx > 0 ? W - ax : ax, maxH = sdy > 0 ? H - ay : ay;
+        const k = Math.min(1, maxW / w, maxH / h); w *= k; h *= k;
+        px = ax + sdx * w; py = ay + sdy * h;
       }
       r = { x: Math.min(ax, px), y: Math.min(ay, py), w: Math.abs(px - ax), h: Math.abs(py - ay) };
     }
@@ -74,7 +86,8 @@ export function CropOverlay({ img, value, onApply, onCancel }: { img: HTMLImageE
   };
   const onUp = () => { drag.current = null; setRect((r) => (r.w < MIN || r.h < MIN ? (value ?? fullRect(img)) : r)); };
   const apply = () => { const full = rect.x <= 0 && rect.y <= 0 && rect.w >= W && rect.h >= H; onApply(full ? null : { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.w), h: Math.round(rect.h) }); };
-  const setMode = (m: "free" | "square") => { setSquare(m === "square"); if (m === "square") setRect((r) => squareOf(r, img)); };
+  const reset = () => setRect(lock ? fitRatio(fullRect(img), lock.ratio, img) : fullRect(img));
+  const setMode = (m: "free" | "square") => { setSquare(m === "square"); if (m === "square") setRect((r) => fitRatio(r, 1, img)); };
   useEffect(() => {
     const k = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); if (e.key === "Enter") apply(); };
     window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
@@ -98,10 +111,12 @@ export function CropOverlay({ img, value, onApply, onCancel }: { img: HTMLImageE
         )}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <div className="w-56"><Segmented value={square ? "square" : "free"} onChange={setMode} options={[{ value: "free", label: "free" }, { value: "square", label: <span className="inline-flex items-center gap-1.5"><Square className="size-3" />square · avatar</span> }]} /></div>
+        {lock
+          ? <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-[13px] text-muted-foreground"><Lock className="size-3" />locked to {lock.label}</span>
+          : <div className="w-56"><Segmented value={square ? "square" : "free"} onChange={setMode} options={[{ value: "free", label: "free" }, { value: "square", label: <span className="inline-flex items-center gap-1.5"><Square className="size-3" />square</span> }]} /></div>}
         <span className="font-mono text-[11px] text-muted-foreground">{Math.round(rect.w)} × {Math.round(rect.h)} px</span>
         <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => setRect(fullRect(img))}>Reset</Button>
+          <Button variant="ghost" size="sm" onClick={reset}>Reset</Button>
           <Button variant="ghost" size="sm" onClick={onCancel}><X />Cancel</Button>
           <Button variant="brand" size="sm" onClick={apply}><Check />Apply crop</Button>
         </div>

@@ -178,14 +178,18 @@ function shadeHex(fg: string, bg: string, k: number) {
 
 // ─── rendering ───────────────────────────────────────────────────────────────
 
-export interface RenderOpts { cellW: number; cellH: number; bg: string; font: string; }
+/**
+ * Either whole-pixel cells (preview: cellW/cellH are rounded, the canvas is cols×cellW by rows×cellH)
+ * or an exact output size (export: width/height are the canvas, cells are fractional to fill it).
+ */
+export interface RenderOpts { cellW?: number; cellH?: number; width?: number; height?: number; bg: string; font: string; }
 /** Glyphs are drawn semi-bold: thin monospace strokes vanish once cells get small. */
 export const GLYPH_WEIGHT = 600;
 
-/** Draw a Composed grid onto a canvas at exactly cellW × cellH device pixels per cell. Resizes the canvas. */
 export function render(c: Composed, canvas: HTMLCanvasElement, r: RenderOpts) {
-  const cellW = Math.max(1, Math.round(r.cellW)), cellH = Math.max(1, Math.round(r.cellH));
-  const W = c.cols * cellW, H = c.rows * cellH;
+  let W: number, H: number, cellW: number, cellH: number;
+  if (r.width && r.height) { W = Math.round(r.width); H = Math.round(r.height); cellW = W / c.cols; cellH = H / c.rows; }
+  else { cellW = Math.max(1, Math.round(r.cellW!)); cellH = Math.max(1, Math.round(r.cellH!)); W = c.cols * cellW; H = c.rows * cellH; }
   if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
   const x = canvas.getContext("2d")!;
   x.fillStyle = r.bg; x.fillRect(0, 0, W, H);
@@ -199,7 +203,7 @@ export function render(c: Composed, canvas: HTMLCanvasElement, r: RenderOpts) {
     if (col !== last) { x.fillStyle = col; last = col; }
     const px = (i % c.cols) * cellW, py = ((i / c.cols) | 0) * cellH;
     const ba = BLOCK_ALPHA[ch];
-    if (ba !== undefined) { x.globalAlpha = ba; x.fillRect(px, py, cellW, cellH); x.globalAlpha = 1; }
+    if (ba !== undefined) { x.globalAlpha = ba; x.fillRect(px, py, cellW + 0.5, cellH + 0.5); x.globalAlpha = 1; }
     else x.fillText(ch, px + cellW / 2, py + cellH / 2 + cellH * 0.04);
   }
 }
@@ -226,8 +230,10 @@ export function applyText(text: string, c: Composed, o: Overrides) {
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-export function toSVG(c: Composed, s: Settings, cellH = 16) {
-  const cellW = cellH * s.aspect, W = c.cols * cellW, H = c.rows * cellH, fs = cellH * 0.92;
+/** SVG at an exact size (width/height) or at cellH per row with the settings' cell shape. */
+export function toSVG(c: Composed, s: Settings, size?: { width: number; height: number }, cellHIn = 16) {
+  const cellW = size ? size.width / c.cols : cellHIn * s.aspect, cellH = size ? size.height / c.rows : cellHIn;
+  const W = size ? size.width : c.cols * cellW, H = size ? size.height : c.rows * cellH, fs = cellH * 0.92;
   const parts: string[] = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" font-family="Geist Mono, ui-monospace, Menlo, Consolas, monospace" font-size="${fs}" font-weight="${GLYPH_WEIGHT}" text-anchor="middle">`,
     `<rect width="100%" height="100%" fill="${s.bg}"/>`,
