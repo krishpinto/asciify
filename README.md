@@ -9,7 +9,7 @@ npm run dev
 
 ## What it does
 
-1. Drop, pick or paste an image.
+1. Drop, pick or paste an image. Crop it if you want (there's a square preset for avatars).
 2. Pick a style, or type any text and it becomes the character ramp (sorted by how much ink each character has).
 3. Fix what you don't like: brushes (erase, restore, lighter, darker, paint an alphabet, paint a colour, stamp a character) or edit the result as plain text.
 4. Download PNG (1×, 2×, 4×), SVG, or text. Or copy the text.

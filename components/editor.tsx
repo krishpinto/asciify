@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ALargeSmall, Brush, Check, ChevronDown, Copy, Download, Eraser, FileCode2, FileImage, FileText, Moon, Paintbrush, RotateCcw, Sun, Type, Undo2, X } from "lucide-react";
+import { ALargeSmall, Brush, Check, ChevronDown, Copy, Crop, Download, Eraser, FileCode2, FileImage, FileText, Moon, Paintbrush, RotateCcw, Sun, Type, Undo2, X } from "lucide-react";
+import { CropOverlay, cropToCanvas, type Rect } from "./crop";
 import { cn } from "@/lib/cn";
 import { applyText, cloneOverrides, compose, download, emptyOverrides, hasEdits, rampFromText, render, sampleImage, toSVG, toText, type Overrides, type Settings } from "@/lib/ascii";
 import { DEFAULTS, PRESETS } from "@/lib/presets";
@@ -70,7 +71,7 @@ function ExportMenu({ scale, setScale, pngSize, onPNG, onSVG, onTXT, up, size = 
           </Row>
           <Row icon={FileCode2} title="SVG" hint="vector · scales to any size" onClick={() => pick(onSVG)} />
           <Row icon={FileText} title="Text file" hint="plain .txt, paste it anywhere" onClick={() => pick(onTXT)} />
-          <p className="px-2.5 pb-1.5 pt-2 text-[11px] leading-snug text-muted-foreground/80">Posting it small, like an avatar? Sites shrink the image and thin characters turn to mush. Set the width to about 60 first, then export at 1×.</p>
+          <p className="px-2.5 pb-1.5 pt-2 text-[11px] leading-snug text-muted-foreground/80">Posting it small, like an avatar? Sites shrink the image and thin characters turn to mush. Crop to the face, set the width to about 80, then export at 1×.</p>
         </div>
       )}
     </div>
@@ -87,6 +88,8 @@ export function Editor({ img, name, onReset }: { img: HTMLImageElement; name: st
   const [brushColor, setBrushColor] = useState("#ffb000");
   const [brushChar, setBrushChar] = useState("@");
   const [textMode, setTextMode] = useState(false);
+  const [crop, setCrop] = useState<Rect | null>(null);
+  const [cropping, setCropping] = useState(false);
   const [scale, setScale] = useState<Scale>("2");
   const [copied, setCopied] = useState(false);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -122,7 +125,9 @@ export function Editor({ img, name, onReset }: { img: HTMLImageElement; name: st
   }, []);
 
   // ── grid + edits ──────────────────────────────────────────────────────────
-  const grid = useMemo(() => sampleImage(img, s.cols, s.aspect), [img, s.cols, s.aspect]);
+  // the source is the crop if there is one; everything after this line never knows the difference
+  const src = useMemo(() => (crop ? cropToCanvas(img, crop) : img), [img, crop]);
+  const grid = useMemo(() => sampleImage(src, s.cols, s.aspect), [src, s.cols, s.aspect]);
   const n = grid.cols * grid.rows;
   // Overrides are mutated in place by brushes (typed arrays, cheap) and then re-wrapped so React sees a change.
   const [ovState, setOv] = useState<Overrides>(() => emptyOverrides(n));
@@ -254,6 +259,7 @@ export function Editor({ img, name, onReset }: { img: HTMLImageElement; name: st
         <button onClick={onReset} className="flex items-center"><Logo /></button>
         <div className="flex items-center gap-2">
           {edited && <Button size="sm" variant="ghost" onClick={doUndo} title="Undo (Ctrl+Z)"><Undo2 />Undo</Button>}
+          <Button size="sm" variant={crop ? "outline" : "ghost"} onClick={() => { setCropping(true); setTool("none"); setTextMode(false); }} title="crop the source image"><Crop />{crop ? "Cropped" : "Crop"}</Button>
           <Button size="sm" variant="ghost" onClick={onReset}><X />New image</Button>
           <ExportMenu {...exportProps} size="sm" />
         </div>
@@ -262,9 +268,11 @@ export function Editor({ img, name, onReset }: { img: HTMLImageElement; name: st
       <div className="grid flex-1 gap-5 p-4 lg:h-[calc(100vh-3rem)] lg:flex-none lg:grid-cols-[minmax(0,1fr)_340px] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden lg:p-5">
         {/* ── stage ── */}
         <section className="flex min-w-0 flex-col gap-2 lg:min-h-0">
-          <div ref={stage} className={cn("relative flex flex-1 items-center justify-center overflow-hidden rounded-xl border border-border bg-card/40", tool !== "none" && !textMode && "cursor-none")}
+          <div ref={stage} className={cn("relative flex flex-1 items-center justify-center overflow-hidden rounded-xl border border-border bg-card/40", tool !== "none" && !textMode && !cropping && "cursor-none")}
             style={{ minHeight: 320, padding: STAGE_PAD }}>
-            {textMode ? (
+            {cropping ? (
+              <CropOverlay img={img} value={crop} onCancel={() => setCropping(false)} onApply={(r) => { setCrop(r); setCropping(false); }} />
+            ) : textMode ? (
               <textarea value={text} onChange={(e) => onText(e.target.value)} onBlur={() => (textDirty.current = false)} spellCheck={false} wrap="off"
                 className="h-full min-h-[60vh] w-full resize-none rounded-lg border border-input p-3 font-mono text-[11px] leading-[1.15] tracking-normal outline-none focus:border-ring"
                 style={{ background: s.bg, color: s.colorMode === "mono" ? s.fg : "#ddd" }} />
@@ -278,7 +286,7 @@ export function Editor({ img, name, onReset }: { img: HTMLImageElement; name: st
           </div>
           <div className="flex items-center justify-between px-1 font-mono text-[11px] text-muted-foreground">
             <span>{cellsLabel}</span>
-            <span>{textMode ? "editing as text" : tool === "none" ? "pick a brush to edit" : `${TOOLS.find((t) => t.id === tool)!.label.toLowerCase()} · ${brushSize}`}{edited && " · edited"}</span>
+            <span>{cropping ? "drag on the photo · Enter applies, Esc cancels" : textMode ? "editing as text" : tool === "none" ? "pick a brush to edit" : `${TOOLS.find((t) => t.id === tool)!.label.toLowerCase()} · ${brushSize}`}{edited && " · edited"}</span>
           </div>
         </section>
 
